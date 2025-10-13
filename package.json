@@ -1,0 +1,28 @@
+{
+  "name": "lumo-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "db:push": "drizzle-kit push",
+    "discover": "node src/scripts/discover-via-api.js",
+    "discover:debug": "node src/scripts/debug-scraper.js",
+    "seed": "node src/scripts/seed.js",
+    "postinstall": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.0",
+    "postgres": "^3.4.0",
+    "playwright": "^1.48.0",
+    "dotenv": "^16.4.0",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

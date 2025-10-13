@@ -1,0 +1,8 @@
+node_modules
+*.env
+*.env.local
+.tiktok-sessions
+.tiktok-sessions-debug
+playwright-debug/
+.specstory
+*.md
