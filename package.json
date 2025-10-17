@@ -10,7 +10,8 @@
     "enrich": "tsx src/scripts/enrich-creators.ts",
     "seed": "tsx src/scripts/seed.ts",
     "sync": "tsx src/scripts/sync-user.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "discover:hashtag": "tsx src/scripts/discover-hashtag.ts"
   },
   "dependencies": {
     "axios": "^1.6.0",
