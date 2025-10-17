@@ -20,7 +20,7 @@ RUN npm run build
 
 
 # Stage 2: Production image
-FROM mcr.microsoft.com/playwright:v1.48.0-jammy
+FROM mcr.microsoft.com/playwright:v1.56.0-jammy
 
 WORKDIR /app
 
