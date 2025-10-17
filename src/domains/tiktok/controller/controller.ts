@@ -1,10 +1,9 @@
-import type { ITikTokService } from '../interfaces/interfaces.js';
-import { SyncError, SyncErrorCode } from '../interfaces/interfaces.js';
+import type { ITikTokService } from '../interfaces.js';
 
 export class TikTokController {
-  constructor(private service: ITikTokService) {}
+  constructor(private service: ITikTokService) { }
 
-  async handleSync(userId: string): Promise<{ success: boolean; data?: any; error?: string; errorCode?: string }> {
+  async handleSync(userId: string): Promise<{ success: boolean; data: any }> {
     try {
       const result = await this.service.syncUserData(userId);
       return {
@@ -12,18 +11,7 @@ export class TikTokController {
         data: result,
       };
     } catch (err: any) {
-      if (err instanceof SyncError) {
-        return {
-          success: false,
-          error: err.message,
-          errorCode: err.code,
-        };
-      }
-      return {
-        success: false,
-        error: err?.message || 'Unknown error occurred',
-        errorCode: SyncErrorCode.UNKNOWN,
-      };
+      throw new Error(`Sync failed: ${err.message}`);
     }
   }
 }
