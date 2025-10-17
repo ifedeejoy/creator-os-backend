@@ -1,42 +1,61 @@
 import cron from 'node-cron';
 import dotenv from 'dotenv';
 import TikTokScraper from './scrapers/tiktok-scraper.js';
+import { DiscoveryWorker } from './workers/discovery-worker.js';
+import { db } from './db/index.js';
+import { creatorDiscoveries } from './db/schema.js';
 
 dotenv.config();
 
 console.log('🚀 Lumo Backend Workers Starting...\n');
 
 const scraper = new TikTokScraper();
+const discoveryWorker = new DiscoveryWorker();
 
+// Start the discovery worker (polls database for jobs)
+discoveryWorker.start().then(() => {
+  console.log('✅ Discovery Worker started - polling for jobs\n');
+});
+
+// Optional: Keep the scheduled daily scraping job
 const hashtags: string[] = ['tiktokshop', 'tiktokmademebuy', 'tiktokfinds'];
 
 cron.schedule('0 2 * * *', async () => {
-  console.log('⏰ Running daily scraping job...');
+  console.log('⏰ Running scheduled daily scraping job...');
 
   try {
-    await scraper.initialize();
-
+    // Queue jobs for the daily hashtags
     for (const tag of hashtags) {
-      const handles = await scraper.scrapeHashtag(tag, 50);
-      console.log(`Found ${handles.length} creators from #${tag}`);
-
-      await scraper.scrapeMultipleProfiles(handles.slice(0, 20));
+      await db.insert(creatorDiscoveries).values({
+        username: `scheduled-${tag}-${Date.now()}`,
+        source: `hashtag:${tag}`,
+        status: 'pending',
+        payload: {
+          hashtag: tag,
+          limit: 20,
+          scheduledAt: new Date().toISOString(),
+          type: 'scheduled',
+        },
+      });
+      console.log(`   Queued scraping job for #${tag}`);
     }
 
-    await scraper.close();
-    console.log('✅ Daily scraping complete\n');
+    console.log('✅ Daily scraping jobs queued\n');
   } catch (error) {
-    console.error('❌ Scraping job failed:', error);
+    console.error('❌ Failed to queue daily jobs:', error);
   }
 });
 
 console.log('✅ Background workers initialized');
-console.log('📅 Scheduled jobs:');
-console.log('   - Daily scraping: 2:00 AM');
-console.log('\n💡 Run manual scrape: npm run scrape\n');
+console.log('📅 Services running:');
+console.log('   - Discovery Worker: Polling database every 5s');
+console.log('   - Daily scheduled jobs: 2:00 AM (auto-queue)');
+console.log('\n💡 Jobs are now processed automatically from the database!');
+console.log('💡 Trigger scraping from the frontend or API\n');
 
 process.on('SIGINT', async () => {
   console.log('\n👋 Shutting down workers...');
+  await discoveryWorker.stop();
   await scraper.close();
   process.exit(0);
 });
