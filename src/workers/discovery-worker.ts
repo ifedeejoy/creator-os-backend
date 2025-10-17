@@ -1,10 +1,10 @@
 import { Job, Worker } from 'bullmq';
 import { eq } from 'drizzle-orm';
-import { DISCOVERY_QUEUE_NAME, type DiscoveryJobData } from '../queue/discovery-queue.js';
-import { getRedisConnectionOptions } from '../queue/redis.js';
-import { db } from '../db/index.js';
-import { creatorDiscoveries, creators } from '../db/schema.js';
-import TikTokScraper from '../scrapers/tiktok-scraper.js';
+import { DISCOVERY_QUEUE_NAME, type DiscoveryJobData } from '../queue/discovery-queue';
+import { getRedisConnectionOptions } from '../queue/redis';
+import { db } from '../db';
+import { creatorDiscoveries, creators } from '../db/schema';
+import TikTokScraper from '../scrapers/tiktok-scraper';
 
 interface CompletionStats {
   successCount: number;

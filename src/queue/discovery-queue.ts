@@ -1,6 +1,6 @@
 import { Queue, QueueEvents } from 'bullmq';
 import type { JobsOptions, Queue as QueueType } from 'bullmq';
-import { getRedisConnectionOptions } from './redis.js';
+import { getRedisConnectionOptions } from './redis';
 
 export const DISCOVERY_QUEUE_NAME = 'discovery-jobs';
 

@@ -1,7 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { eq } from 'drizzle-orm';
-import { db } from '../db/index.js';
-import { creators } from '../db/schema.js';
+import { db } from '../db/index';
+import { creators } from '../db/schema';
 
 const RATE_LIMIT_MS = parseInt(process.env.SCRAPER_RATE_LIMIT_MS || '2000', 10);
 
@@ -420,22 +420,24 @@ class TikTokScraper {
 export default TikTokScraper;
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const scraper = new TikTokScraper();
+  (async () => {
+    const scraper = new TikTokScraper();
 
-  try {
-    await scraper.initialize();
+    try {
+      await scraper.initialize();
 
-    const hashtag = process.argv[2] || 'tiktokshop';
-    const handles = await scraper.scrapeHashtag(hashtag, 20);
+      const hashtag = process.argv[2] || 'tiktokshop';
+      const handles = await scraper.scrapeHashtag(hashtag, 20);
 
-    console.log(`\n📊 Scraping ${handles.length} creator profiles...\n`);
-    await scraper.scrapeMultipleProfiles(handles);
+      console.log(`\n📊 Scraping ${handles.length} creator profiles...\n`);
+      await scraper.scrapeMultipleProfiles(handles);
 
-    console.log('\n✅ Scraping complete!');
-  } catch (error) {
-    console.error('❌ Scraper error:', error);
-  } finally {
-    await scraper.close();
-    process.exit(0);
-  }
+      console.log('\n✅ Scraping complete!');
+    } catch (error) {
+      console.error('❌ Scraper error:', error);
+    } finally {
+      await scraper.close();
+      process.exit(0);
+    }
+  })();
 }

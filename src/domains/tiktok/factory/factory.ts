@@ -1,7 +1,7 @@
-import { TikTokClient } from '../utils/client.js';
-import { TikTokRepository } from '../repository/repository.js';
-import { TikTokService } from '../services/service.js';
-import { TikTokController } from '../controller/controller.js';
+import { TikTokClient } from '../utils/client';
+import { TikTokRepository } from '../repository/repository';
+import { TikTokService } from '../services/service';
+import { TikTokController } from '../controller/controller';
 
 export function createTikTokDomain() {
   const repository = new TikTokRepository();

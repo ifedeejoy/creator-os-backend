@@ -1,4 +1,4 @@
-import type { ITikTokService, ITikTokClient, ITikTokRepository, SyncResult } from '../interfaces/interfaces.js';
+import type { ITikTokService, ITikTokClient, ITikTokRepository, SyncResult } from '../interfaces/interfaces';
 
 export class TikTokService implements ITikTokService {
   constructor(private client: ITikTokClient, private repository: ITikTokRepository) { }

@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
-import type { ITikTokRepository, TikTokUserInfo, TikTokVideo } from '../interfaces/interfaces.js';
-import { SyncError, SyncErrorCode } from '../interfaces/interfaces.js';
-import { db } from '../../../db/index.js';
-import { users, videos } from '../../../db/schema.js';
-import { decrypt, encrypt } from '../../../lib/encryption.js';
+import type { ITikTokRepository, TikTokUserInfo, TikTokVideo } from '../interfaces/interfaces';
+import { SyncError, SyncErrorCode } from '../interfaces/interfaces';
+import { db } from '../../../db/index';
+import { users, videos } from '../../../db/schema';
+import { decrypt, encrypt } from '../../../lib/encryption';
 import axios from 'axios';
 
 export class TikTokRepository implements ITikTokRepository {

@@ -1,4 +1,4 @@
-import type { ITikTokService } from '../interfaces.js';
+import type { ITikTokService } from '../interfaces/interfaces';
 
 export class TikTokController {
   constructor(private service: ITikTokService) { }

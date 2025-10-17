@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ITikTokClient, TikTokUserInfo, TikTokVideo } from '../interfaces/interfaces.js';
+import type { ITikTokClient, TikTokUserInfo, TikTokVideo } from '../interfaces/interfaces';
 
 const TIKTOK_API_BASE = 'https://open.tiktokapis.com/v2';
 
@@ -39,11 +39,11 @@ export class TikTokClient implements ITikTokClient {
         const remaining = totalDesired - collected.length;
         const pageSize = Math.min(20, Math.max(1, remaining));
 
-        const body: Record<string, any> = { max_count: pageSize, fields };
+        const body: Record<string, any> = { max_count: pageSize };
         if (cursor) body.cursor = cursor;
 
         const response = await axios.post(
-          `${TIKTOK_API_BASE}/video/list/`,
+          `${TIKTOK_API_BASE}/video/list/?fields=${encodeURIComponent(fields)}`,
           body,
           {
             headers: {

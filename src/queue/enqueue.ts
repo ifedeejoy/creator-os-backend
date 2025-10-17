@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { getDiscoveryQueue, type DiscoveryJobData } from './discovery-queue.js';
-import { db } from '../db/index.js';
-import { creatorDiscoveries } from '../db/schema.js';
+import { getDiscoveryQueue, type DiscoveryJobData } from './discovery-queue';
+import { db } from '../db/index';
+import { creatorDiscoveries } from '../db/schema';
 
 export interface EnqueueDiscoveryInput {
   discoveryId?: string;

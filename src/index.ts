@@ -2,9 +2,9 @@ import http from 'node:http';
 import { URL } from 'node:url';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
-import { DiscoveryWorker } from './workers/discovery-worker.js';
-import { enqueueDiscoveryJob } from './queue/enqueue.js';
-import { createTikTokDomain, createTikTokRoutes } from './domains/tiktok/index.js';
+import { DiscoveryWorker } from './workers/discovery-worker';
+import { enqueueDiscoveryJob } from './queue/enqueue';
+import { createTikTokDomain, createTikTokRoutes } from './domains/tiktok';
 
 dotenv.config();
 

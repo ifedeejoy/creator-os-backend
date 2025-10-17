@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { TikTokController } from '../controller/controller.js';
+import type { TikTokController } from '../controller/controller';
 
 export function createTikTokRoutes(controller: TikTokController) {
   return {
