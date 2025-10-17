@@ -22,6 +22,14 @@ export function getDiscoveryQueue(): QueueType<DiscoveryJobData> {
       connection: getRedisConnectionOptions(),
       defaultJobOptions: getDefaultJobOptions(),
     });
+
+    discoveryQueue.on('error', (error: NodeJS.ErrnoException) => {
+      if (error?.code === 'ECONNRESET') {
+        console.warn('🔁 Queue connection reset. Awaiting automatic reconnection.');
+        return;
+      }
+      console.error('❌ BullMQ Queue Error:', error);
+    });
   }
 
   return discoveryQueue;
@@ -31,6 +39,14 @@ export function getDiscoveryQueueEvents(): QueueEvents {
   if (!discoveryQueueEvents) {
     discoveryQueueEvents = new QueueEvents(DISCOVERY_QUEUE_NAME, {
       connection: getRedisConnectionOptions(),
+    });
+
+    discoveryQueueEvents.on('error', (error: NodeJS.ErrnoException) => {
+      if (error?.code === 'ECONNRESET') {
+        console.warn('🔁 QueueEvents connection reset. Awaiting automatic reconnection.');
+        return;
+      }
+      console.error('❌ BullMQ QueueEvents Error:', error);
     });
   }
 

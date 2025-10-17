@@ -41,12 +41,55 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/api/discovery' && method === 'POST') {
+    try {
+      let body = '';
+      for await (const chunk of req) {
+        body += chunk;
+      }
+
+      const data = JSON.parse(body);
+      const { hashtag, limit = 20, discoveryId, requestedBy, metadata } = data;
+
+      if (!hashtag) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'hashtag is required' }));
+        return;
+      }
+
+      const result = await enqueueDiscoveryJob({
+        hashtag,
+        limit,
+        discoveryId,
+        source: `hashtag:${hashtag}`,
+        requestedBy,
+        metadata,
+      });
+
+      console.log(`✅ Enqueued discovery job: ${result.jobId} for #${hashtag}`);
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        success: true,
+        jobId: result.jobId,
+        discoveryId: result.discoveryId,
+        hashtag
+      }));
+    } catch (error) {
+      console.error('❌ Failed to enqueue discovery job:', error);
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: 'Failed to enqueue job', details: (error as Error).message }));
+    }
+    return;
+  }
+
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
 server.listen(httpPort, () => {
   console.log(`🌐 HTTP API server listening on port ${httpPort}`);
+  console.log(`   POST /api/discovery - Enqueue discovery job`);
   console.log(`   POST /api/sync - Sync user TikTok videos`);
   console.log(`   GET /health - Health check\n`);
 });

@@ -2,6 +2,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index';
 import { creators } from '../db/schema';
+import fs from 'fs';
+import path from 'path';
 
 const RATE_LIMIT_MS = parseInt(process.env.SCRAPER_RATE_LIMIT_MS || '2000', 10);
 
@@ -19,9 +21,18 @@ type ContextOptions = Parameters<Browser['newContext']>[0];
 
 class TikTokScraper {
   private browser: Browser | null = null;
+  private sessionDir: string | null = null;
 
-  async initialize(): Promise<void> {
+  async initialize(options: { sessionDir?: string } = {}): Promise<void> {
     console.log('🚀 Launching browser...');
+    if (options.sessionDir) {
+      this.sessionDir = options.sessionDir;
+      if (!fs.existsSync(this.sessionDir)) {
+        fs.mkdirSync(this.sessionDir, { recursive: true });
+      }
+      console.log(`   Using session persistence directory: ${this.sessionDir}`);
+    }
+
     const headless = process.env.SCRAPER_HEADLESS === 'false' ? false : true;
     const slowMo = parseInt(process.env.SCRAPER_SLOWMO || '0', 10);
     this.browser = await chromium.launch({
@@ -43,7 +54,7 @@ class TikTokScraper {
       throw new Error('Browser not initialized');
     }
 
-    const context = await this.browser.newContext({
+    const contextOptions: ContextOptions = {
       userAgent:
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 720 },
@@ -52,7 +63,13 @@ class TikTokScraper {
       hasTouch: false,
       colorScheme: 'light',
       ...extraOptions,
-    });
+    };
+
+    if (this.sessionDir) {
+      contextOptions.storageState = path.join(this.sessionDir, 'default', 'cookies.json')
+    }
+
+    const context = await this.browser.newContext(contextOptions);
 
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', {
@@ -116,6 +133,45 @@ class TikTokScraper {
     }
   }
 
+  private async isErrorPage(page: Page): Promise<boolean> {
+    try {
+      const errorDetected = await page.evaluate(() => {
+        const bodyText = document.body?.innerText?.slice(0, 1000).toLowerCase() || '';
+        return (
+          bodyText.includes('something went wrong') ||
+          bodyText.includes('try again') ||
+          bodyText.includes('server error') ||
+          document.querySelector('[data-e2e="error-page"]') !== null
+        );
+      });
+      return errorDetected;
+    } catch {
+      return false;
+    }
+  }
+
+  private async retryWithRefresh(page: Page, url: string, maxRetries = 2): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`   🔄 Retry attempt ${attempt}/${maxRetries} - refreshing page...`);
+
+      try {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => null);
+        await page.waitForTimeout(2000);
+
+        if (!(await this.isErrorPage(page))) {
+          console.log(`   ✅ Retry ${attempt} successful - error page resolved`);
+          return true;
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ Retry ${attempt} failed:`, error);
+      }
+    }
+
+    console.warn(`   ❌ All ${maxRetries} retry attempts exhausted`);
+    return false;
+  }
+
   async scrapeProfile(username: string): Promise<ScrapedProfile | null> {
     console.log(`📡 Scraping profile: @${username}`);
 
@@ -128,6 +184,17 @@ class TikTokScraper {
         timeout: 30000,
       });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => null);
+
+      // Check for error page and retry if needed
+      if (await this.isErrorPage(page)) {
+        console.warn(`⚠️ TikTok returned an error page for @${username}`);
+        const retrySuccess = await this.retryWithRefresh(page, `https://www.tiktok.com/@${username}`);
+        if (!retrySuccess) {
+          console.error(`❌ Failed to recover from error page after retries for @${username}`);
+          await context.close();
+          return null;
+        }
+      }
 
       if (await this.isBotChallenge(page)) {
         console.warn(
@@ -229,6 +296,17 @@ class TikTokScraper {
       await context.close();
       console.error(`❌ Failed to scrape @${username}:`, (error as Error).message);
       return null;
+    } finally {
+      if (context && this.sessionDir) {
+        try {
+          const cookies = await context.cookies();
+          const cookiesPath = path.join(this.sessionDir, 'default', 'cookies.json');
+          fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
+        } catch (e) {
+          console.warn(`   ⚠️ Could not save cookies: ${(e as Error).message}`);
+        }
+      }
+      if (context) await context.close();
     }
   }
 
@@ -277,6 +355,17 @@ class TikTokScraper {
 
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => null);
       await page.waitForTimeout(2000);
+
+      // Check for error page and retry if needed
+      if (await this.isErrorPage(page)) {
+        console.warn('⚠️ TikTok returned an error page ("Something went wrong")');
+        const retrySuccess = await this.retryWithRefresh(page, `https://www.tiktok.com/tag/${hashtag}`);
+        if (!retrySuccess) {
+          console.error('❌ Failed to recover from error page after retries');
+          await context.close();
+          return [];
+        }
+      }
 
       const sigiStateAvailable = await page
         .waitForSelector('script#SIGI_STATE', { timeout: 8000 })
@@ -398,6 +487,17 @@ class TikTokScraper {
       await context.close();
       console.error(`❌ Failed to scrape hashtag #${hashtag}:`, (error as Error).message);
       return [];
+    } finally {
+      if (context && this.sessionDir) {
+        try {
+          const cookies = await context.cookies();
+          const cookiesPath = path.join(this.sessionDir, 'default', 'cookies.json');
+          fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
+        } catch (e) {
+          console.warn(`   ⚠️ Could not save cookies: ${(e as Error).message}`);
+        }
+      }
+      if (context) await context.close();
     }
   }
 
@@ -419,7 +519,7 @@ class TikTokScraper {
 
 export default TikTokScraper;
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
   (async () => {
     const scraper = new TikTokScraper();
 

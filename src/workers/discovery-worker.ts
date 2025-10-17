@@ -5,6 +5,7 @@ import { getRedisConnectionOptions } from '../queue/redis';
 import { db } from '../db';
 import { creatorDiscoveries, creators } from '../db/schema';
 import TikTokScraper from '../scrapers/tiktok-scraper';
+import path from 'path';
 
 interface CompletionStats {
   successCount: number;
@@ -21,17 +22,33 @@ export class DiscoveryWorker {
   }
 
   async start(): Promise<void> {
-    console.log('🔍 Discovery Worker starting (Redis queue)...');
-    await this.scraper.initialize();
+    console.log('🔍 Discovery Worker starting...');
 
-    this.worker = new Worker<DiscoveryJobData>(
-      DISCOVERY_QUEUE_NAME,
-      async (job) => this.processJob(job),
-      {
-        connection: getRedisConnectionOptions(),
-        concurrency: Number.parseInt(process.env.DISCOVERY_CONCURRENCY ?? '1', 10),
-      },
-    );
+    try {
+      console.log('   Initializing scraper and browser...');
+      const sessionDir = path.join(process.cwd(), '.tiktok-sessions');
+      await this.scraper.initialize({ sessionDir });
+      console.log('   ✅ Scraper initialized successfully.');
+    } catch (error) {
+      console.error('❌ CRITICAL: Failed to initialize scraper. Playwright browser download may have failed.', error);
+      throw error; // Re-throw to prevent the worker from starting
+    }
+
+    try {
+      console.log('   Initializing Redis-backed BullMQ worker...');
+      this.worker = new Worker<DiscoveryJobData>(
+        DISCOVERY_QUEUE_NAME,
+        async (job) => this.processJob(job),
+        {
+          connection: getRedisConnectionOptions(),
+          concurrency: Number.parseInt(process.env.DISCOVERY_CONCURRENCY ?? '1', 10),
+        },
+      );
+      console.log('   ✅ Worker initialized and connected to Redis.');
+    } catch (error) {
+      console.error('❌ CRITICAL: Failed to initialize BullMQ worker. Check Redis connection details.', error);
+      throw error; // Re-throw to prevent the application from continuing in a broken state
+    }
 
     this.worker.on('completed', (job) => {
       console.log(`✅ Job ${job.data.discoveryId} completed (attempts: ${job.attemptsMade + 1})`);
@@ -42,7 +59,11 @@ export class DiscoveryWorker {
       console.error(`❌ Job ${discoveryId} failed`, error);
     });
 
-    this.worker.on('error', (error) => {
+    this.worker.on('error', (error: NodeJS.ErrnoException) => {
+      if (error?.code === 'ECONNRESET') {
+        console.warn('🔁 Redis connection reset detected. ioredis will attempt to reconnect automatically.');
+        return;
+      }
       console.error('❌ Worker error:', error);
     });
   }
