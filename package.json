@@ -6,9 +6,10 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "db:push": "drizzle-kit push",
-    "discover": "node src/scripts/discover-via-api.js",
-    "discover:debug": "node src/scripts/debug-scraper.js",
-    "seed": "node src/scripts/seed.js",
+    "discover": "tsx src/scripts/discover-via-api.ts",
+    "discover:debug": "tsx src/scripts/debug-scraper.ts",
+    "enrich": "tsx src/scripts/enrich-creators.ts",
+    "seed": "tsx src/scripts/seed.ts",
     "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
