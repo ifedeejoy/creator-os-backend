@@ -9,20 +9,18 @@ COPY package*.json ./
 # Install all dependencies, including devDependencies for building
 RUN npm install
 
+# Install Playwright browsers
+RUN npx playwright install --with-deps chromium
+
 # Copy the rest of the application source code
 COPY . .
 
 # Compile TypeScript to JavaScript
-# We'll add a build script to package.json if it doesn't exist
-# For now, we assume `tsc` will compile `src` to `dist`
-RUN npx tsc --outDir dist
-
-# Prune devDependencies for a clean production node_modules
-RUN npm prune --production
+RUN npm run build
 
 
 # Stage 2: Production image
-FROM node:20-slim
+FROM mcr.microsoft.com/playwright/javascript:v1.48.0-jammy
 
 WORKDIR /app
 
@@ -32,12 +30,11 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy the compiled JavaScript output from the builder stage
 COPY --from=builder /app/dist ./dist
 
+# Copy Playwright browser binaries from the builder stage
+COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
+
 # Copy package.json to the production image
 COPY package.json .
-
-# Expose the port the app runs on (if any, good practice)
-# ENV PORT 3001
-# EXPOSE 3001
 
 # Command to run the application
 CMD ["node", "dist/index.js"]

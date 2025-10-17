@@ -10,8 +10,7 @@
     "discover:debug": "tsx src/scripts/debug-scraper.ts",
     "enrich": "tsx src/scripts/enrich-creators.ts",
     "seed": "tsx src/scripts/seed.ts",
-    "build": "tsc",
-    "postinstall": "npx playwright install chromium"
+    "build": "tsc"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.0",
