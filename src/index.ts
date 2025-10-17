@@ -10,7 +10,9 @@ dotenv.config();
 
 console.log('🚀 Lumo Backend Starting...\n');
 
-const httpPort = Number.parseInt(process.env.HTTP_PORT ?? '3001', 10);
+// Cloud Run uses PORT env variable, fallback to HTTP_PORT or 3001
+const httpPort = Number.parseInt(process.env.PORT ?? process.env.HTTP_PORT ?? '3001', 10);
+console.log(`📍 Server will bind to port: ${httpPort}`);
 const tiktokDomain = createTikTokDomain();
 const tiktokRoutes = createTikTokRoutes(tiktokDomain.controller);
 
@@ -87,18 +89,27 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.listen(httpPort, () => {
-  console.log(`🌐 HTTP API server listening on port ${httpPort}`);
+// Start HTTP server IMMEDIATELY for health checks (Cloud Run requirement)
+server.listen(httpPort, '0.0.0.0', () => {
+  console.log(`✅ HTTP API server listening on port ${httpPort}`);
   console.log(`   POST /api/discovery - Enqueue discovery job`);
   console.log(`   POST /api/sync - Sync user TikTok videos`);
-  console.log(`   GET /health - Health check\n`);
+  console.log(`   GET /health - Health check`);
+  console.log(`   🏥 Container is healthy and ready!\n`);
 });
 
+// Initialize worker asynchronously (doesn't block health checks)
+console.log('⏳ Initializing Discovery Worker (background)...');
 const discoveryWorker = new DiscoveryWorker();
 
-discoveryWorker.start().then(() => {
-  console.log('✅ Discovery Worker started - listening for Redis jobs\n');
-});
+discoveryWorker.start()
+  .then(() => {
+    console.log('✅ Discovery Worker started - listening for Redis jobs\n');
+  })
+  .catch((error) => {
+    console.error('❌ Failed to start Discovery Worker:', error);
+    console.log('⚠️  API server continues running, but worker is unavailable\n');
+  });
 
 const hashtags: string[] = ['tiktokshop', 'tiktokmademebuy', 'tiktokfinds'];
 

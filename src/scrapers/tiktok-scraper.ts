@@ -22,6 +22,7 @@ type ContextOptions = Parameters<Browser['newContext']>[0];
 class TikTokScraper {
   private browser: Browser | null = null;
   private sessionDir: string | null = null;
+  private headless: boolean = true;
 
   async initialize(options: { sessionDir?: string } = {}): Promise<void> {
     console.log('🚀 Launching browser...');
@@ -33,10 +34,10 @@ class TikTokScraper {
       console.log(`   Using session persistence directory: ${this.sessionDir}`);
     }
 
-    const headless = process.env.SCRAPER_HEADLESS === 'false' ? false : true;
+    this.headless = process.env.SCRAPER_HEADLESS === 'false' ? false : true;
     const slowMo = parseInt(process.env.SCRAPER_SLOWMO || '0', 10);
     this.browser = await chromium.launch({
-      headless,
+      headless: this.headless,
       slowMo: Number.isNaN(slowMo) ? 0 : slowMo,
       args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
     });
@@ -65,8 +66,38 @@ class TikTokScraper {
       ...extraOptions,
     };
 
+    // Load existing cookies/storage state if available
     if (this.sessionDir) {
-      contextOptions.storageState = path.join(this.sessionDir, 'default', 'cookies.json')
+      const storageStatePath = path.join(this.sessionDir, 'default', 'storage-state.json');
+      const legacyCookiesPath = path.join(this.sessionDir, 'default', 'cookies.json');
+
+      // Try modern storage state first
+      if (fs.existsSync(storageStatePath)) {
+        try {
+          contextOptions.storageState = storageStatePath;
+          console.log('   🔐 Loaded authentication from storage state');
+        } catch (e) {
+          console.warn(`   ⚠️ Failed to load storage state: ${(e as Error).message}`);
+        }
+      }
+      // Fallback to legacy cookies format
+      else if (fs.existsSync(legacyCookiesPath)) {
+        try {
+          const cookiesData = JSON.parse(fs.readFileSync(legacyCookiesPath, 'utf-8'));
+          // Convert legacy cookies to storage state format
+          const storageState = {
+            cookies: Array.isArray(cookiesData) ? cookiesData : [],
+            origins: []
+          };
+          fs.writeFileSync(storageStatePath, JSON.stringify(storageState, null, 2));
+          contextOptions.storageState = storageStatePath;
+          console.log('   🔐 Migrated and loaded authentication from legacy cookies');
+        } catch (e) {
+          console.warn(`   ⚠️ Failed to migrate legacy cookies: ${(e as Error).message}`);
+        }
+      } else {
+        console.log('   ℹ️  No existing authentication found - using guest session');
+      }
     }
 
     const context = await this.browser.newContext(contextOptions);
@@ -150,6 +181,69 @@ class TikTokScraper {
     }
   }
 
+  private async isAuthenticated(page: Page): Promise<boolean> {
+    try {
+      // Check for login button or authenticated user indicators
+      const authStatus = await page.evaluate(() => {
+        // Look for login button (means NOT authenticated)
+        const loginButton = document.querySelector('[data-e2e="top-login-button"]');
+        if (loginButton) return false;
+
+        // Look for user avatar/profile menu (means authenticated)
+        const userAvatar = document.querySelector('[data-e2e="profile-icon"]');
+        const userMenu = document.querySelector('[data-e2e="nav-profile"]');
+        if (userAvatar || userMenu) return true;
+
+        // Check cookies for auth tokens
+        const cookies = document.cookie;
+        return cookies.includes('sessionid') || cookies.includes('sid_tt');
+      });
+
+      return authStatus;
+    } catch {
+      return false;
+    }
+  }
+
+  private async promptForLogin(page: Page, context: BrowserContext): Promise<boolean> {
+    console.log('\n⚠️  TikTok requires authentication to continue.');
+    console.log('📱 Please log in to TikTok in the browser window...');
+    console.log('   1. Log in with your TikTok account');
+    console.log('   2. Complete any verification if prompted');
+    console.log('   3. Wait for the page to fully load');
+    console.log('\n   ⏳ Waiting for you to log in... (timeout: 5 minutes)\n');
+
+    try {
+      // Wait for authentication indicators or timeout
+      await Promise.race([
+        // Wait for login button to disappear
+        page.waitForSelector('[data-e2e="top-login-button"]', { state: 'hidden', timeout: 300000 }),
+        // Or wait for user profile to appear
+        page.waitForSelector('[data-e2e="profile-icon"]', { state: 'visible', timeout: 300000 }),
+      ]);
+
+      // Verify authentication
+      const isAuth = await this.isAuthenticated(page);
+
+      if (isAuth) {
+        console.log('✅ Authentication successful!\n');
+        // Save the authenticated session
+        if (this.sessionDir) {
+          const storageStatePath = path.join(this.sessionDir, 'default', 'storage-state.json');
+          await context.storageState({ path: storageStatePath });
+          console.log('   💾 Saved authenticated session for future use\n');
+        }
+        return true;
+      }
+
+      console.warn('⚠️  Authentication verification failed\n');
+      return false;
+    } catch (error) {
+      console.warn(`⚠️  Login timeout or error: ${(error as Error).message}\n`);
+      return false;
+    }
+  }
+
   private async retryWithRefresh(page: Page, url: string, maxRetries = 2): Promise<boolean> {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`   🔄 Retry attempt ${attempt}/${maxRetries} - refreshing page...`);
@@ -198,10 +292,36 @@ class TikTokScraper {
 
       if (await this.isBotChallenge(page)) {
         console.warn(
-          `⚠️ TikTok presented a verification challenge while loading @${username}. Try running in debug mode or provide authenticated cookies.`,
+          `⚠️ TikTok presented a verification challenge while loading @${username}.`,
         );
-        await context.close();
-        return null;
+
+        // If not authenticated and not headless, offer to log in
+        const isAuth = await this.isAuthenticated(page);
+        if (!isAuth && !this.headless) {
+          console.log('💡 You can log in to bypass this challenge...');
+          const loginSuccess = await this.promptForLogin(page, context);
+          if (loginSuccess) {
+            console.log('🔄 Retrying after successful login...');
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => null);
+
+            // Check if challenge is gone
+            if (!(await this.isBotChallenge(page))) {
+              console.log('✅ Challenge bypassed! Continuing...');
+            } else {
+              console.warn('⚠️ Challenge still present after login');
+              await context.close();
+              return null;
+            }
+          } else {
+            await context.close();
+            return null;
+          }
+        } else {
+          console.log('💡 Try running with SCRAPER_HEADLESS=false to log in manually');
+          await context.close();
+          return null;
+        }
       }
 
       await page.waitForSelector('[data-e2e="user-title"]', { timeout: 10000 }).catch(() => null);
@@ -299,11 +419,11 @@ class TikTokScraper {
     } finally {
       if (context && this.sessionDir) {
         try {
-          const cookies = await context.cookies();
-          const cookiesPath = path.join(this.sessionDir, 'default', 'cookies.json');
-          fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
+          const storageStatePath = path.join(this.sessionDir, 'default', 'storage-state.json');
+          await context.storageState({ path: storageStatePath });
+          console.log('   💾 Saved authentication state');
         } catch (e) {
-          console.warn(`   ⚠️ Could not save cookies: ${(e as Error).message}`);
+          console.warn(`   ⚠️ Could not save storage state: ${(e as Error).message}`);
         }
       }
       if (context) await context.close();
@@ -490,11 +610,11 @@ class TikTokScraper {
     } finally {
       if (context && this.sessionDir) {
         try {
-          const cookies = await context.cookies();
-          const cookiesPath = path.join(this.sessionDir, 'default', 'cookies.json');
-          fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
+          const storageStatePath = path.join(this.sessionDir, 'default', 'storage-state.json');
+          await context.storageState({ path: storageStatePath });
+          console.log('   💾 Saved authentication state');
         } catch (e) {
-          console.warn(`   ⚠️ Could not save cookies: ${(e as Error).message}`);
+          console.warn(`   ⚠️ Could not save storage state: ${(e as Error).message}`);
         }
       }
       if (context) await context.close();

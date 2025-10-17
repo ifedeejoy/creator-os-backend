@@ -1,40 +1,47 @@
 # Stage 1: Build the application
-FROM node:20 AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Copy package files
 COPY package*.json ./
 
-# Install all dependencies, including devDependencies for building
-RUN npm install
+# Install dependencies (including dev dependencies for build)
+RUN npm ci --only=production=false
 
-# Install Playwright browsers
-RUN npx playwright install --with-deps chromium
-
-# Copy the rest of the application source code
+# Copy source code
 COPY . .
 
 # Compile TypeScript to JavaScript
 RUN npm run build
 
 
-# Stage 2: Production image
+# Stage 2: Production image with Playwright
 FROM mcr.microsoft.com/playwright:v1.56.0-jammy
 
 WORKDIR /app
 
-# Copy production node_modules from the builder stage
-COPY --from=builder /app/node_modules ./node_modules
+# Install production dependencies only
+COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
 
-# Copy the compiled JavaScript output from the builder stage
+# Copy compiled JavaScript from builder
 COPY --from=builder /app/dist ./dist
 
-# Copy Playwright browser binaries from the builder stage
-COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
+# Copy package.json
+COPY package.json ./
 
-# Copy package.json to the production image
-COPY package.json .
+# Set environment variables for Cloud Run
+ENV NODE_ENV=production
+ENV SCRAPER_HEADLESS=true
+ENV PORT=8080
 
-# Command to run the application
+# Expose port (Cloud Run uses PORT env var)
+EXPOSE 8080
+
+# Health check for local testing (Cloud Run uses HTTP probes)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 8080) + '/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1);})"
+
+# Run the application
 CMD ["node", "dist/index.js"]
