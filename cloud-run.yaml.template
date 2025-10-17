@@ -1,0 +1,89 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: lumo-backend
+  labels:
+    cloud.googleapis.com/location: us-central1
+spec:
+  template:
+    metadata:
+      annotations:
+        # Startup probe configuration
+        run.googleapis.com/startup-cpu-boost: 'true'
+        # Container timeout
+        run.googleapis.com/container-request-timeout: 5m
+        # Minimum instances (prevent cold starts)
+        autoscaling.knative.dev/minScale: '1'
+        # Maximum instances
+        autoscaling.knative.dev/maxScale: '10'
+    spec:
+      # Container concurrency
+      containerConcurrency: 10
+      # Startup probe (critical for Cloud Run)
+      containers:
+      - name: lumo-backend
+        image: CLOUD_RUN_IMAGE_PLACEHOLDER
+        ports:
+        - name: http1
+          containerPort: 8080
+        # Environment variables
+        env:
+        - name: PORT
+          value: '8080'
+        - name: NODE_ENV
+          value: 'production'
+        - name: SCRAPER_HEADLESS
+          value: 'true'
+        # SECRETS - Use Cloud Run secrets, NOT plain text!
+        # Create secrets: gcloud secrets create SECRET_NAME --data-file=-
+        # Reference them below
+        # Example:
+        # - name: REDIS_URL
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: redis-url
+        #       key: latest
+        # - name: POSTGRES_URL
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: postgres-url
+        #       key: latest
+        # Resource limits
+        resources:
+          limits:
+            cpu: '2'
+            memory: '4Gi'
+          requests:
+            cpu: '1'
+            memory: '2Gi'
+        # Startup probe - gives container time to initialize
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          # Initial delay before first probe
+          initialDelaySeconds: 10
+          # How often to probe
+          periodSeconds: 5
+          # Number of failures before giving up
+          failureThreshold: 60
+          # How long to wait for response
+          timeoutSeconds: 3
+        # Liveness probe - checks if container is still running
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+---
+# INSTRUCTIONS:
+# 1. Copy this template to cloud-run.yaml (gitignored)
+# 2. Replace CLOUD_RUN_IMAGE_PLACEHOLDER with your image
+# 3. Add secrets using gcloud secrets (see above examples)
+# 4. Deploy with: gcloud run services replace cloud-run.yaml
+#
+# NEVER commit the actual cloud-run.yaml with real secrets!
+# This template is safe to commit.
