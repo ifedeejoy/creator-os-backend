@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import dotenv from 'dotenv';
+import http from 'node:http';
 import TikTokScraper from './scrapers/tiktok-scraper.js';
 import { DiscoveryWorker } from './workers/discovery-worker.js';
 import { db } from './db/index.js';
@@ -8,6 +9,23 @@ import { creatorDiscoveries } from './db/schema.js';
 dotenv.config();
 
 console.log('🚀 Lumo Backend Workers Starting...\n');
+
+const port = Number.parseInt(process.env.PORT ?? '8080', 10);
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('ok');
+    return;
+  }
+
+  res.writeHead(405);
+  res.end();
+});
+
+server.listen(port, () => {
+  console.log(`🌐 HTTP health endpoint listening on :${port}\n`);
+});
 
 const scraper = new TikTokScraper();
 const discoveryWorker = new DiscoveryWorker();
@@ -55,6 +73,15 @@ console.log('💡 Trigger scraping from the frontend or API\n');
 
 process.on('SIGINT', async () => {
   console.log('\n👋 Shutting down workers...');
+  server.close();
+  await discoveryWorker.stop();
+  await scraper.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n👋 Shutting down workers (SIGTERM)...');
+  server.close();
   await discoveryWorker.stop();
   await scraper.close();
   process.exit(0);
